@@ -10,7 +10,7 @@ export default function HomePage() {
     <div
       style={{
         minHeight: "100vh",
-        background: theme.colors.background,
+        background: `linear-gradient(135deg, rgba(59,130,246,0.10), rgba(249,250,251,1))`,
         display: "grid",
         placeItems: "center",
         padding: "20px"

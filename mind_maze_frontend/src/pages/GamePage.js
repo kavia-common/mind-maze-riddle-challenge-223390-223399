@@ -1,166 +1,148 @@
 import React, { useMemo, useState } from "react";
 import TopBar from "../components/TopBar";
 import GameCard from "../components/GameCard";
+import GameOver from "../components/GameOver";
+import SettingsPanel from "../components/SettingsPanel";
 import { LEVELS } from "../data/riddles";
 import { theme, getEnv } from "../theme";
+import { GameProvider, GameContext } from "../context/GameContext";
 
 /**
  * PUBLIC_INTERFACE
  * GamePage - contains the core game loop across levels and shows final screen.
  */
-export default function GamePage() {
-  const [levelIndex, setLevelIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [livesRemaining, setLivesRemaining] = useState(LEVELS[0].lives);
-  const [gameOver, setGameOver] = useState(false);
-  const [finished, setFinished] = useState(false);
+function GamePageInner() {
+  const {
+    levelIndex, level,
+    score, addScore,
+    lives, loseLife,
+    skipLeft, consumeSkip,
+    timerLen, setTimerLen,
+    soundEnabled, setSoundEnabled,
+    gameOver, finished,
+    resetGame, advanceLevel,
+    highScore
+  } = React.useContext(GameContext);
 
-  const level = LEVELS[levelIndex];
-  const maxLives = level.lives;
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const apiBase = useMemo(
-    () =>
-      getEnv("REACT_APP_BACKEND_URL",
-        getEnv("REACT_APP_API_BASE", "")),
+    () => getEnv("REACT_APP_BACKEND_URL", getEnv("REACT_APP_API_BASE", "")),
     []
   );
   const wsUrl = useMemo(() => getEnv("REACT_APP_WS_URL", ""), []);
   const envMode = useMemo(() => getEnv("REACT_APP_NODE_ENV", "development"), []);
 
-  const onResult = ({ correct, scoreDelta, loseLife, completedLevel }) => {
-    if (correct) {
-      setScore((s) => s + scoreDelta);
-    }
-    if (loseLife) {
-      setLivesRemaining((l) => Math.max(0, l - 1));
-    }
-    // Level completion
-    if (completedLevel) {
-      const isLast = levelIndex >= LEVELS.length - 1;
-      if (isLast) {
-        setFinished(true);
-        return;
-      }
-      // move to next level
-      const nextIndex = Math.min(LEVELS.length - 1, levelIndex + 1);
-      setLevelIndex(nextIndex);
-      setLivesRemaining(LEVELS[nextIndex].lives);
-    }
+  const onResult = ({ correct, scoreDelta, loseLife: lose, completedLevel }) => {
+    if (correct) addScore(scoreDelta);
+    if (lose) loseLife();
+    if (completedLevel) advanceLevel();
   };
 
-  // If lives drop to zero -> game over
-  React.useEffect(() => {
-    if (livesRemaining <= 0 && !finished) {
-      setGameOver(true);
-    }
-  }, [livesRemaining, finished]);
-
-  const resetGame = () => {
-    setLevelIndex(0);
-    setScore(0);
-    setLivesRemaining(LEVELS[0].lives);
-    setGameOver(false);
-    setFinished(false);
+  const onSkipRiddle = () => {
+    if (skipLeft <= 0) return;
+    consumeSkip();
+    // Signal GameCard to proceed handled there via prop callback (by calling 'onSkipNext')
   };
+
+  const onRestart = () => {
+    resetGame();
+  };
+
+  const headerActions = (
+    <button
+      type="button"
+      onClick={() => setSettingsOpen((v) => !v)}
+      aria-expanded={settingsOpen}
+      aria-label="Open settings"
+      className="btn"
+      style={{
+        background: "transparent",
+        color: theme.colors.textMuted,
+        border: `1px solid ${theme.colors.border}`,
+        padding: "8px 12px",
+        borderRadius: theme.radii.pill,
+        fontWeight: 700,
+        boxShadow: "none",
+        cursor: "pointer"
+      }}
+    >
+      ⚙️ Settings
+    </button>
+  );
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        background: theme.colors.background
+        background: `linear-gradient(135deg, rgba(59,130,246,0.10), rgba(249,250,251,1))`,
       }}
     >
-      <TopBar
-        level={level.id}
-        levelName={level.name}
-        score={score}
-        lives={livesRemaining}
-        maxLives={maxLives}
-      />
+      <div style={{ position: "sticky", top: 0, zIndex: 20 }}>
+        <TopBar
+          level={level.id}
+          levelName={level.name}
+          score={score}
+          lives={lives}
+          maxLives={level.lives}
+        />
+        <div style={{ display: "flex", justifyContent: "center", padding: "8px 0" }}>
+          {headerActions}
+          <div style={{ width: 10 }} />
+          <div
+            style={{
+              background: "transparent",
+              color: theme.colors.textMuted,
+              fontSize: 12,
+              paddingTop: 8
+            }}
+          >
+            High Score: <strong style={{ color: theme.colors.primary }}>{highScore}</strong> • Skip Left: {skipLeft}
+          </div>
+        </div>
+      </div>
 
-      {/* Environment note for developers, not user secrets */}
       {envMode !== "production" && (
-        <div style={{ textAlign: "center", color: theme.colors.textMuted, fontSize: 12, marginTop: 8 }}>
+        <div style={{ textAlign: "center", color: theme.colors.textMuted, fontSize: 12 }}>
           Env: {envMode}{apiBase ? ` • API: ${apiBase}` : ""}{wsUrl ? ` • WS: ${wsUrl}` : ""}
         </div>
       )}
 
       {!gameOver && !finished && (
-        <GameCard level={level} onResult={onResult} />
+        <GameCard
+          level={{ ...level, timePerRiddle: timerLen }}
+          onResult={onResult}
+          skipAllowed={skipLeft > 0}
+          onSkip={onSkipRiddle}
+        />
       )}
 
       {(gameOver || finished) && (
-        <div
-          style={{
-            maxWidth: 720,
-            margin: "30px auto",
-            background: theme.colors.surface,
-            border: `1px solid ${theme.colors.border}`,
-            borderRadius: theme.radii.lg,
-            boxShadow: theme.shadow.lg,
-            overflow: "hidden"
-          }}
-        >
-          <div
-            style={{
-              background: theme.gradient,
-              padding: "22px 20px",
-              borderBottom: `1px solid ${theme.colors.border}`
-            }}
-          >
-            <div style={{ fontWeight: 800, color: theme.colors.text }}>
-              {gameOver ? "Game Over" : "Congratulations!"}
-            </div>
-            <div style={{ fontSize: 14, color: theme.colors.textMuted }}>
-              {gameOver ? "You ran out of lives." : "You mastered the Mind Maze."}
-            </div>
-          </div>
-          <div style={{ padding: 20 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: theme.colors.text }}>
-              Final Score: <span style={{ color: theme.colors.secondary }}>{score}</span>
-            </div>
-            <div style={{ marginTop: 14, color: theme.colors.textMuted }}>
-              {finished
-                ? "Brilliant! You completed all levels. Try again to beat your score."
-                : "Don't give up! Try again and push further into the maze."}
-            </div>
-
-            <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={resetGame}
-                style={{
-                  background: theme.colors.primary,
-                  color: "#fff",
-                  border: "none",
-                  padding: "12px 18px",
-                  borderRadius: theme.radii.pill,
-                  fontWeight: 800,
-                  boxShadow: theme.shadow.sm,
-                  cursor: "pointer"
-                }}
-              >
-                Play Again
-              </button>
-              <a
-                href="/"
-                style={{
-                  background: "transparent",
-                  color: theme.colors.textMuted,
-                  border: `1px solid ${theme.colors.border}`,
-                  padding: "12px 16px",
-                  borderRadius: theme.radii.pill,
-                  fontWeight: 700,
-                  textDecoration: "none"
-                }}
-              >
-                Back to Home
-              </a>
-            </div>
-          </div>
-        </div>
+        <GameOver score={score} onRestart={onRestart} finished={finished} />
       )}
+
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        time={timerLen}
+        onTimeChange={setTimerLen}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled((v) => !v)}
+      />
+
       <div style={{ height: 40 }} />
     </div>
+  );
+}
+
+/**
+ * PUBLIC_INTERFACE
+ * GamePage - provider wrapper
+ */
+export default function GamePage() {
+  return (
+    <GameProvider>
+      <GamePageInner />
+    </GameProvider>
   );
 }

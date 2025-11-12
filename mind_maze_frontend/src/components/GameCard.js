@@ -1,7 +1,8 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { theme } from "../theme";
 import TimerRing from "./TimerRing";
 import { useTimer } from "../hooks/useTimer";
+import FeedbackBanner from "./FeedbackBanner";
 
 /**
  * normalize answers to compare loosely
@@ -20,16 +21,20 @@ function normalize(text) {
  * PUBLIC_INTERFACE
  * @param {{
  *  level: { id:number, name:string, timePerRiddle:number, lives:number, points:number, riddles:Array } ,
- *  onResult: (result: { correct: boolean, scoreDelta: number, loseLife: boolean, completedLevel: boolean }) => void
+ *  onResult: (result: { correct: boolean, scoreDelta: number, loseLife: boolean, completedLevel: boolean }) => void,
+ *  skipAllowed?: boolean,
+ *  onSkip?: () => void
  * }} props
  */
-export default function GameCard({ level, onResult }) {
+export default function GameCard({ level, onResult, skipAllowed = false, onSkip }) {
   const [index, setIndex] = useState(0);
   const [lives, setLives] = useState(level.lives);
   const [streak, setStreak] = useState(0);
   const [feedback, setFeedback] = useState(null); // "correct" | "wrong" | null
   const [hintVisible, setHintVisible] = useState(false);
+  const [answered, setAnswered] = useState(false);
   const inputRef = useRef(null);
+  const submitRef = useRef(null);
 
   const riddle = level.riddles[index];
   const points = useMemo(() => level.points + Math.max(0, streak - 1) * 5, [level.points, streak]);
@@ -41,9 +46,34 @@ export default function GameCard({ level, onResult }) {
     }
   });
 
+  // Focus input on riddle change
+  useEffect(() => {
+    setTimeout(() => inputRef.current && inputRef.current.focus(), 0);
+  }, [index]);
+
+  // When level changes externally (timer length), ensure timer resets for current riddle
+  useEffect(() => {
+    reset(level.timePerRiddle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [level.timePerRiddle]);
+
   const animate = (type) => {
     setFeedback(type);
-    setTimeout(() => setFeedback(null), 500);
+    setTimeout(() => setFeedback(null), 600);
+  };
+
+  const nextOrComplete = () => {
+    const atEnd = index >= level.riddles.length - 1;
+    if (!atEnd) {
+      setIndex((i) => i + 1);
+      setHintVisible(false);
+      setAnswered(false);
+      reset(level.timePerRiddle);
+      if (inputRef.current) inputRef.current.value = "";
+      setTimeout(() => inputRef.current && inputRef.current.focus(), 0);
+    } else {
+      onResult({ correct: false, scoreDelta: 0, loseLife: false, completedLevel: true });
+    }
   };
 
   const handleWrong = useCallback((fromTimeout = false) => {
@@ -53,27 +83,15 @@ export default function GameCard({ level, onResult }) {
     const nextLives = Math.max(0, lives - 1);
     setLives(nextLives);
     setStreak(0);
+    setAnswered(true);
 
-    const atEnd = index >= level.riddles.length - 1;
-    const completedLevel = false;
-
-    onResult({ correct: false, scoreDelta, loseLife, completedLevel });
+    onResult({ correct: false, scoreDelta, loseLife, completedLevel: false });
 
     if (nextLives <= 0) {
-      // Out of lives -> end level
+      // Parent/context handles game over
       return;
     }
-
-    if (!atEnd) {
-      setIndex((i) => i + 1);
-      setHintVisible(false);
-      reset(level.timePerRiddle);
-      if (inputRef.current) inputRef.current.value = "";
-    } else {
-      // Level finished due to completing all questions with remaining lives (but wrong here was last)
-      onResult({ correct: false, scoreDelta: 0, loseLife: false, completedLevel: true });
-    }
-  }, [index, level.riddles.length, level.timePerRiddle, lives, onResult, reset]);
+  }, [lives, onResult]);
 
   const handleCorrect = useCallback(() => {
     animate("correct");
@@ -82,19 +100,13 @@ export default function GameCard({ level, onResult }) {
     const atEnd = index >= level.riddles.length - 1;
     const nextStreak = streak + 1;
     setStreak(nextStreak);
-
+    setAnswered(true);
     onResult({ correct: true, scoreDelta: delta, loseLife, completedLevel: atEnd });
-
-    if (!atEnd) {
-      setIndex((i) => i + 1);
-      setHintVisible(false);
-      reset(level.timePerRiddle);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }, [index, level.riddles.length, level.timePerRiddle, onResult, points, reset, streak]);
+  }, [index, onResult, points, streak]);
 
   const submitAnswer = (e) => {
     e.preventDefault();
+    if (answered) return;
     const userText = inputRef.current?.value ?? "";
     if (!userText.trim()) return;
     const ok = riddle.answers.some((ans) => normalize(ans) === normalize(userText));
@@ -105,9 +117,15 @@ export default function GameCard({ level, onResult }) {
     }
   };
 
-  const endLevel = () => {
-    onResult({ correct: false, scoreDelta: 0, loseLife: false, completedLevel: true });
+  const handleSkip = () => {
+    if (!skipAllowed || answered) return;
+    if (onSkip) onSkip();
+    // Move to next riddle without affecting score/life
+    setAnswered(false);
+    nextOrComplete();
   };
+
+  const nextEnabled = answered;
 
   return (
     <div
@@ -149,26 +167,47 @@ export default function GameCard({ level, onResult }) {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setHintVisible((v) => !v)}
-            className="btn"
-            style={{
-              background: theme.colors.secondary,
-              color: "#0b0b0b",
-              border: "none",
-              padding: "10px 14px",
-              borderRadius: theme.radii.pill,
-              fontWeight: 700,
-              boxShadow: theme.shadow.sm,
-              transition: "transform .1s ease",
-              cursor: "pointer"
-            }}
-            aria-expanded={hintVisible}
-            aria-controls="hint"
-          >
-            {hintVisible ? "Hide Hint" : "Show Hint"}
-          </button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => setHintVisible((v) => !v)}
+              className="btn"
+              style={{
+                background: theme.colors.secondary,
+                color: "#0b0b0b",
+                border: "none",
+                padding: "10px 14px",
+                borderRadius: theme.radii.pill,
+                fontWeight: 700,
+                boxShadow: theme.shadow.sm,
+                transition: "transform .1s ease",
+                cursor: "pointer"
+              }}
+              aria-expanded={hintVisible}
+              aria-controls="hint"
+            >
+              {hintVisible ? "Hide Hint" : "Show Hint"}
+            </button>
+            <button
+              type="button"
+              onClick={handleSkip}
+              disabled={!skipAllowed || answered}
+              className="btn"
+              style={{
+                background: "transparent",
+                color: (!skipAllowed || answered) ? "#9ca3af" : theme.colors.primary,
+                border: `1px solid ${theme.colors.border}`,
+                padding: "10px 14px",
+                borderRadius: theme.radii.pill,
+                fontWeight: 700,
+                boxShadow: "none",
+                cursor: (!skipAllowed || answered) ? "not-allowed" : "pointer"
+              }}
+              aria-label="Skip this riddle (once per game)"
+            >
+              Skip
+            </button>
+          </div>
         </div>
 
         <div style={{ padding: 20 }}>
@@ -214,6 +253,7 @@ export default function GameCard({ level, onResult }) {
               aria-label="Your answer"
               placeholder="Type your answer…"
               autoComplete="off"
+              disabled={answered}
               style={{
                 flex: "1 1 260px",
                 minWidth: 220,
@@ -225,14 +265,17 @@ export default function GameCard({ level, onResult }) {
                            feedback === "wrong" ? `0 0 0 4px rgba(239,68,68,0.12)` :
                            "none",
                 transition: "box-shadow .15s ease, border-color .15s ease",
-                fontSize: 16
+                fontSize: 16,
+                background: answered ? "#f3f4f6" : "#fff"
               }}
               onFocus={(e) => (e.target.style.borderColor = theme.colors.primary)}
               onBlur={(e) => (e.target.style.borderColor = theme.colors.border)}
             />
             <button
+              ref={submitRef}
               type="submit"
               className="btn"
+              disabled={answered}
               style={{
                 background: theme.colors.primary,
                 color: "#fff",
@@ -242,29 +285,39 @@ export default function GameCard({ level, onResult }) {
                 fontWeight: 800,
                 letterSpacing: 0.2,
                 boxShadow: theme.shadow.sm,
-                cursor: "pointer"
+                cursor: answered ? "not-allowed" : "pointer",
+                opacity: answered ? 0.6 : 1
               }}
             >
               Submit
             </button>
             <button
               type="button"
-              onClick={endLevel}
+              onClick={nextOrComplete}
+              disabled={!nextEnabled}
+              className="btn"
               style={{
                 background: "transparent",
-                color: theme.colors.textMuted,
+                color: nextEnabled ? theme.colors.text : "#9ca3af",
                 border: `1px solid ${theme.colors.border}`,
                 padding: "12px 16px",
                 borderRadius: theme.radii.pill,
                 fontWeight: 700,
                 boxShadow: "none",
-                cursor: "pointer"
+                cursor: nextEnabled ? "pointer" : "not-allowed"
               }}
-              aria-label="End level early"
+              aria-label="Next riddle"
             >
-              Skip Level
+              Next
             </button>
           </form>
+
+          <div style={{ marginTop: 12 }}>
+            <FeedbackBanner
+              type={feedback === "correct" ? "success" : feedback === "wrong" ? "error" : null}
+              message={feedback === "correct" ? "Correct! Great job." : feedback === "wrong" ? "Not quite. Keep going!" : undefined}
+            />
+          </div>
 
           <div style={{ marginTop: 10, fontSize: 12, color: theme.colors.textMuted }}>
             Points for correct answer: <strong style={{ color: theme.colors.secondary }}>{points}</strong>
