@@ -8,6 +8,7 @@ This project provides a minimal React template with a clean, modern UI and minim
 - **Modern UI**: Clean, responsive design with KAVIA brand styling
 - **Fast**: Minimal dependencies for quick loading times
 - **Simple**: Easy to understand and modify
+- **Persistence (Supabase)**: Saves player progress (score, level, lives) for authenticated and anonymous users
 
 ## Getting Started
 
@@ -29,7 +30,7 @@ It correctly bundles React in production mode and optimizes the build for the be
 
 ## Supabase
 
-This app is pre-wired to use Supabase for auth, database, and storage.
+This app is pre-wired to use Supabase for auth, database, and storage, including gameplay persistence.
 
 1) Create a `.env` file using `.env.example` as a template and set:
 ```
@@ -37,26 +38,40 @@ REACT_APP_SUPABASE_URL=your_project_url
 REACT_APP_SUPABASE_ANON_KEY=your_public_anon_key
 ```
 
-2) Use the provided client and hook:
+2) Apply SQL to create the scores table and policies:
+
+- Open Supabase SQL Editor and run the file:
+  mind_maze_frontend/supabase.sql
+
+This creates public.scores with unique constraints and RLS policies supporting both authenticated users (user_id) and anonymous sessions (anon_id via deviceId).
+
+3) Use the provided client and hooks:
 
 - Client:
 ```js
-import supabase from './src/lib/supabaseClient';
-// or: import { getSupabaseClient } from './src/lib/supabaseClient';
+import supabase, { getSupabaseClient } from './src/lib/supabaseClient';
 ```
 
 - Auth hook:
 ```jsx
 import useSupabaseAuth from './src/hooks/useSupabaseAuth';
+```
 
-function SignInForm() {
-  const { user, loading, signInWithEmail, signUpWithEmail, signOut } = useSupabaseAuth();
+- Progress provider/hook (auto-wired in src/index.js):
+```jsx
+import { useProgress } from './src/context/ProgressContext.jsx';
+
+function HUD() {
+  const { progress, setProgress } = useProgress();
+  // Example: award 50 points
+  const award = () => setProgress({ score: progress.score + 50 });
   // ...
 }
 ```
 
 Notes:
-- The client validates env vars at runtime and logs a clear console error if missing.
+- The provider loads saved progress on app mount and persists changes (upsert) whenever score, level, or lives change.
+- Anonymous sessions use a stable deviceId stored in localStorage.
 - For signUp email confirmations, you can pass options.emailRedirectTo to signUpWithEmail.
   Example:
   signUpWithEmail(email, password, { emailRedirectTo: process.env.REACT_APP_FRONTEND_URL });
@@ -65,27 +80,11 @@ Notes:
 
 ### Colors
 
-The main brand colors are defined as CSS variables in `src/App.css`:
-
-```css
-:root {
-  --kavia-orange: #E87A41;
-  --kavia-dark: #1A1A1A;
-  --text-color: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --border-color: rgba(255, 255, 255, 0.1);
-}
-```
+The main brand colors are defined as CSS variables, see `src/theme.css`.
 
 ### Components
 
-This template uses pure HTML/CSS components instead of a UI framework. You can find component styles in `src/App.css`. 
-
-Common components include:
-- Buttons (`.btn`, `.btn-large`)
-- Container (`.container`)
-- Navigation (`.navbar`)
-- Typography (`.title`, `.subtitle`, `.description`)
+This template uses pure HTML/CSS components instead of a UI framework.
 
 ## Learn More
 

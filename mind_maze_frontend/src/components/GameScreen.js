@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RIDDLES } from '../riddles';
 import { getFeatureFlags, isCorrectAnswer } from '../utils';
 import GameLayout from './GameLayout';
@@ -7,6 +7,7 @@ import Timer from './Timer';
 import RiddleCard from './RiddleCard';
 import AnswerInput from './AnswerInput';
 import '../theme.css';
+import { useProgress } from '../context/ProgressContext.jsx';
 
 // Simple confetti fallback using emojis when flag enabled (no external deps)
 function Confetti({ trigger }) {
@@ -55,12 +56,25 @@ function Confetti({ trigger }) {
 export default function GameScreen({ onGameOver }) {
   /** Manages the full game loop across riddles and lives. */
   const flags = useMemo(() => getFeatureFlags(), []);
+  const { progress, setProgress, loading: progressLoading } = useProgress();
   const [index, setIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [state, setState] = useState('idle'); // idle | correct | incorrect
   const [confettiOn, setConfettiOn] = useState(false);
   const lockedRef = useRef(false); // prevent double processing until transition completes
+
+  // Initialize local state from persisted progress once available
+  useEffect(() => {
+    if (!progressLoading && progress) {
+      setScore(progress.score ?? 0);
+      setLives(progress.lives ?? 3);
+      // Level maps 1..N to index 0..N-1
+      const nextIndex = Math.min(Math.max(0, (progress.level ?? 1) - 1), RIDDLES.length - 1);
+      setIndex(nextIndex);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progressLoading]);
 
   const current = RIDDLES[index];
   const level = current?.level ?? (index + 1);
@@ -72,7 +86,9 @@ export default function GameScreen({ onGameOver }) {
     }
     setIndex((i) => i + 1);
     setState('idle');
-  }, [index, onGameOver, score]);
+    // Persist level advancement
+    setProgress((prev) => ({ ...prev, level: level + 1, score, lives }));
+  }, [index, onGameOver, score, lives, level, setProgress]);
 
   const handleExpireOrWrong = useCallback(() => {
     if (lockedRef.current) return;
@@ -80,6 +96,8 @@ export default function GameScreen({ onGameOver }) {
     setState('incorrect');
     setLives((lv) => {
       const next = lv - 1;
+      // Persist lives decrement
+      setProgress((prev) => ({ ...prev, lives: next, score, level }));
       setTimeout(() => {
         lockedRef.current = false;
         if (next <= 0) {
@@ -90,14 +108,19 @@ export default function GameScreen({ onGameOver }) {
       }, 550);
       return next;
     });
-  }, [handleNext, onGameOver, score]);
+  }, [handleNext, onGameOver, score, level, setProgress]);
 
   const handleSubmit = useCallback((safeInput) => {
     if (!current || lockedRef.current) return;
     if (isCorrectAnswer(safeInput, current.answers)) {
       lockedRef.current = true;
       setState('correct');
-      setScore((s) => s + 100);
+      setScore((s) => {
+        const ns = s + 100;
+        // Persist score increment
+        setProgress((prev) => ({ ...prev, score: ns, level, lives }));
+        return ns;
+      });
       if (flags.confetti) {
         setConfettiOn(true);
         setTimeout(() => setConfettiOn(false), 1200);
@@ -109,7 +132,7 @@ export default function GameScreen({ onGameOver }) {
     } else {
       handleExpireOrWrong();
     }
-  }, [current, flags.confetti, handleNext, handleExpireOrWrong]);
+  }, [current, flags.confetti, handleNext, handleExpireOrWrong, setProgress, level, lives]);
 
   const handleSkip = useCallback(() => {
     // Skipping costs a life
