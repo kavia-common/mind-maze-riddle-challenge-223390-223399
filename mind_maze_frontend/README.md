@@ -27,6 +27,40 @@ Launches the test runner in interactive watch mode.
 Builds the app for production to the `build` folder.\
 It correctly bundles React in production mode and optimizes the build for the best performance.
 
+## Supabase
+
+This app is pre-wired to use Supabase for auth, database, and storage.
+
+1) Create a `.env` file using `.env.example` as a template and set:
+```
+REACT_APP_SUPABASE_URL=your_project_url
+REACT_APP_SUPABASE_ANON_KEY=your_public_anon_key
+```
+
+2) Use the provided client and hook:
+
+- Client:
+```js
+import supabase from './src/lib/supabaseClient';
+// or: import { getSupabaseClient } from './src/lib/supabaseClient';
+```
+
+- Auth hook:
+```jsx
+import useSupabaseAuth from './src/hooks/useSupabaseAuth';
+
+function SignInForm() {
+  const { user, loading, signInWithEmail, signUpWithEmail, signOut } = useSupabaseAuth();
+  // ...
+}
+```
+
+Notes:
+- The client validates env vars at runtime and logs a clear console error if missing.
+- For signUp email confirmations, you can pass options.emailRedirectTo to signUpWithEmail.
+  Example:
+  signUpWithEmail(email, password, { emailRedirectTo: process.env.REACT_APP_FRONTEND_URL });
+
 ## Customization
 
 ### Colors
