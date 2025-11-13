@@ -8,6 +8,16 @@ The app reads optional React environment variables (prefixed with REACT_APP_). N
 - REACT_APP_SUPABASE_ANON_KEY: Supabase anon key (public)
 - REACT_APP_FRONTEND_URL: Optional. Used by auth flows for emailRedirectTo (if you enable email signups).
 
+How to configure:
+1) Copy .env.example to .env or .env.local in mind_maze_frontend/
+2) Set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY using the values provided by your Supabase project.
+3) Restart the dev server if it was running (CRA reads env at build time).
+
+Health/Connectivity:
+- A minimal health utility is available at src/lib/health.js
+  - checkSupabaseConfig() -> validates required env presence.
+  - pingSupabase() -> initializes the client and calls auth.getSession() as a lightweight connectivity check.
+
 Notes:
-- Do not place secrets in these variables. Supabase anon key is safe for client use.
+- Do not place secrets in source code. Only use REACT_APP_* env variables. Supabase anon key is designed for client use.
 - Gameplay persistence uses Supabase; if REACT_APP_SUPABASE_URL/ANON_KEY are unset, the app runs but progress will not be saved.

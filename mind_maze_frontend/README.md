@@ -28,11 +28,11 @@ Launches the test runner in interactive watch mode.
 Builds the app for production to the `build` folder.\
 It correctly bundles React in production mode and optimizes the build for the best performance.
 
-## Supabase
+## Supabase Configuration
 
 This app is pre-wired to use Supabase for auth, database, and storage, including gameplay persistence.
 
-1) Create a `.env` file using `.env.example` as a template and set:
+1) Create a `.env` (or `.env.local`) file using `.env.example` as a template and set:
 ```
 REACT_APP_SUPABASE_URL=your_project_url
 REACT_APP_SUPABASE_ANON_KEY=your_public_anon_key
@@ -47,9 +47,14 @@ This creates public.scores with unique constraints and RLS policies supporting b
 
 3) Use the provided client and hooks:
 
-- Client:
+- Client (path inside the app source):
 ```js
 import supabase, { getSupabaseClient } from './src/lib/supabaseClient';
+```
+
+- Optional health checks:
+```js
+import { checkSupabaseConfig, pingSupabase } from './src/lib/health';
 ```
 
 - Auth hook:
@@ -72,9 +77,10 @@ function HUD() {
 Notes:
 - The provider loads saved progress on app mount and persists changes (upsert) whenever score, level, or lives change.
 - Anonymous sessions use a stable deviceId stored in localStorage.
-- For signUp email confirmations, you can pass options.emailRedirectTo to signUpWithEmail.
+- For signUp email confirmations, pass options.emailRedirectTo to signUpWithEmail.
   Example:
   signUpWithEmail(email, password, { emailRedirectTo: process.env.REACT_APP_FRONTEND_URL });
+- Secrets are never hardcoded in code; the client reads from process.env at build time.
 
 ## Customization
 
