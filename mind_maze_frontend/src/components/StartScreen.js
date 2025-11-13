@@ -13,7 +13,7 @@ export default function StartScreen({ onStart }) {
       rightControls={<button className="btn btn-secondary" onClick={onStart}>Start</button>}
     >
       <div className="center">
-        <div className="hero">Welcome to Mind Maze</div>
+        <h1 className="hero">Welcome to Mind Maze</h1>
         <div className="hero-sub">Solve riddles, race the timer, and climb the levels.</div>
         <div className="section" style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
           <button className="btn btn-primary" onClick={onStart} aria-label="Start the game">
