@@ -8,6 +8,7 @@ test('renders start screen', () => {
       <App />
     </ProgressProvider>
   );
-  const start = screen.getByText(/Mind Maze/i);
-  expect(start).toBeInTheDocument();
+  // Use an accessible, unique selector: the Start screen hero heading
+  const heading = screen.getByRole('heading', { name: /welcome to mind maze/i });
+  expect(heading).toBeInTheDocument();
 });
