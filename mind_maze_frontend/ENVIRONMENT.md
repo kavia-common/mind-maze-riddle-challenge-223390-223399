@@ -17,6 +17,9 @@ Health/Connectivity:
 - A minimal health utility is available at src/lib/health.js
   - checkSupabaseConfig() -> validates required env presence.
   - pingSupabase() -> initializes the client and calls auth.getSession() as a lightweight connectivity check.
+- Data services (Supabase-backed) live under src/lib:
+  - quizService.js, questionService.js, answerService.js, scoreService.js, leaderboardService.js
+  - All functions validate inputs and degrade gracefully if Supabase env vars are missing.
 
 Notes:
 - Do not place secrets in source code. Only use REACT_APP_* env variables. Supabase anon key is designed for client use.
