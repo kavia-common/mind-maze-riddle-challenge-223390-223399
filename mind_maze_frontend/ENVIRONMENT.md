@@ -5,7 +5,7 @@ The app reads optional React environment variables (prefixed with REACT_APP_). N
 - REACT_APP_FEATURE_FLAGS: comma separated flags, example: "confetti=true"
 - REACT_APP_EXPERIMENTS_ENABLED: "true" enables some enhancements by default (confetti)
 - REACT_APP_SUPABASE_URL: Supabase project URL (public)
-- REACT_APP_SUPABASE_ANON_KEY: Supabase anon key (public)
+- REACT_APP_SUPABASE_ANON_KEY: Supabase anon key (public). Some environments may provide REACT_APP_SUPABASE_KEY; the client supports this as a fallback but prefer REACT_APP_SUPABASE_ANON_KEY.
 - REACT_APP_FRONTEND_URL: Optional. Used by auth flows for emailRedirectTo (if you enable email signups).
 
 How to configure:
