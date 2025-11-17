@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef } from 'react';
 import { getSupabaseClient } from '../lib/supabaseClient';
 import { getOrCreateDeviceId, loadProgress as svcLoad, upsertProgress as svcUpsert } from '../lib/progressService';
 
@@ -7,7 +7,7 @@ import { getOrCreateDeviceId, loadProgress as svcLoad, upsertProgress as svcUpse
  useProgress: React hook to access gameplay progress and persistence helpers.
  Exposes:
   - progress: { score, level, lives }
-  - setProgress(partial): merge and persist
+  - setProgress(partial): merge and persist (no-ops when unchanged)
   - resetProgress()
   - loading: boolean while initializing
   - error: last error (if any)
@@ -53,6 +53,11 @@ function useAuthUserId() {
   return userId;
 }
 
+// shallow equality for our simple shape
+function shallowEqualProgress(a, b) {
+  return a.score === b.score && a.level === b.level && a.lives === b.lives;
+}
+
 export function ProgressProvider({ children }) {
   const user_id = useAuthUserId();
   const anon_id = useMemo(() => (user_id ? null : getOrCreateDeviceId()), [user_id]);
@@ -60,6 +65,7 @@ export function ProgressProvider({ children }) {
   const [progress, setProgressState] = useState({ score: 0, level: 1, lives: 3 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const warnedPersistRef = useRef(false);
 
   // Load initial progress when identifiers resolved
   useEffect(() => {
@@ -72,11 +78,12 @@ export function ProgressProvider({ children }) {
         const { data, error: err } = await svcLoad({ user_id: user_id || undefined, anon_id: anon_id || undefined });
         if (err) throw err;
         if (data && active) {
-          setProgressState({
+          const loaded = {
             score: Number(data.score) || 0,
             level: Number(data.level) || 1,
             lives: Number(data.lives) || 3,
-          });
+          };
+          setProgressState((prev) => (shallowEqualProgress(prev, loaded) ? prev : loaded));
         }
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -111,7 +118,10 @@ export function ProgressProvider({ children }) {
         if (err) throw err;
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.warn('[Progress] persist error', e?.message || e);
+        if (!warnedPersistRef.current) {
+          console.warn('[Progress] persist error (subsequent errors will be muted)', e?.message || e);
+          warnedPersistRef.current = true;
+        }
         setError(e);
       }
     },
@@ -122,8 +132,15 @@ export function ProgressProvider({ children }) {
   const setProgress = useCallback(
     (partial) => {
       setProgressState((prev) => {
-        const next = { ...prev, ...(typeof partial === 'function' ? partial(prev) : partial) };
-        // fire and forget persist
+        const patch = typeof partial === 'function' ? partial(prev) : partial || {};
+        const next = { ...prev, ...patch };
+
+        // Avoid redundant state updates and persistence that can cause render loops
+        if (shallowEqualProgress(prev, next)) {
+          return prev;
+        }
+
+        // fire-and-forget persist on meaningful changes only
         persist(next);
         return next;
       });
@@ -134,8 +151,11 @@ export function ProgressProvider({ children }) {
   // PUBLIC_INTERFACE
   const resetProgress = useCallback(() => {
     const init = { score: 0, level: 1, lives: 3 };
-    setProgressState(init);
-    persist(init);
+    setProgressState((prev) => {
+      if (shallowEqualProgress(prev, init)) return prev;
+      persist(init);
+      return init;
+    });
   }, [persist]);
 
   // PUBLIC_INTERFACE
