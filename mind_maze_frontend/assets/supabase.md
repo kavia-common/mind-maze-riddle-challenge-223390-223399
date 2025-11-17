@@ -9,9 +9,15 @@ Environment (no secrets hardcoded):
 - REACT_APP_SUPABASE_URL
 - REACT_APP_SUPABASE_ANON_KEY
 - Optional: REACT_APP_FRONTEND_URL for auth email redirects
+- Optional: REACT_APP_API_BASE to target the internal Node proxy (recommended in development/production)
+
+Server-only (Node API):
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY
 
 Client creation:
 - See src/lib/supabaseClient.js (gracefully degrades if env vars are missing)
+- When REACT_APP_API_BASE is set, data services use the proxy API; otherwise they call Supabase directly.
 
 Health utilities:
 - src/lib/health.js
@@ -27,114 +33,46 @@ New services:
 - src/lib/answerService.js
 - src/lib/leaderboardService.js
 
-## SQL for New Tables
+## API Proxy
 
-Run these in Supabase SQL editor to create the required tables and RLS policies.
+A lightweight Node/Express API lives in `server/index.js`. It uses the Supabase service role key on the server to:
+- Validate inputs and proxy requests to Supabase
+- Expose REST endpoints:
+  - GET /api/quizzes
+  - GET /api/quizzes/:id
+  - POST /api/quizzes
+  - PATCH /api/quizzes/:id
+  - GET /api/quizzes/:quiz_id/questions
+  - POST /api/quizzes/:quiz_id/questions
+  - PATCH /api/questions/:id
+  - POST /api/answers
+  - GET /api/answers?quiz_id=&user_id|anon_id
+  - GET /api/score?user_id|anon_id
+  - POST /api/score
+  - GET /api/leaderboard?limit=&offset=
+  - GET /health
 
-```sql
--- Quizzes
-create table if not exists public.quizzes (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  description text,
-  is_public boolean not null default true,
-  created_at timestamptz not null default now()
-);
+Start it with:
+- npm run start:api
+Or run both app and API:
+- npm run dev
 
-alter table public.quizzes enable row level security;
+Configure your client to use it:
+- Set REACT_APP_API_BASE=http://localhost:4000
 
--- Publicly readable quizzes if is_public = true
-create policy "Public read quizzes"
-on public.quizzes
-for select
-to anon, authenticated
-using ( is_public = true );
+Server env (never expose to client):
+- SUPABASE_URL=...
+- SUPABASE_SERVICE_ROLE_KEY=...
 
--- Allow authenticated users to create/update (optional; adjust as needed)
-create policy "Auth insert quizzes"
-on public.quizzes
-for insert
-to authenticated
-with check ( true );
+## SQL for Tables
 
-create policy "Auth update quizzes"
-on public.quizzes
-for update
-to authenticated
-using ( true )
-with check ( true );
+Run these in Supabase SQL editor:
 
--- Questions
-create table if not exists public.questions (
-  id uuid primary key default gen_random_uuid(),
-  quiz_id uuid not null references public.quizzes(id) on delete cascade,
-  text text not null,
-  answers_json jsonb not null default '[]'::jsonb,
-  seconds integer not null default 30 check (seconds >= 5 and seconds <= 600),
-  order_index integer not null default 0,
-  created_at timestamptz not null default now()
-);
+- scores and policies: mind_maze_frontend/supabase.sql
+- quizzes, questions, answers: mind_maze_frontend/assets/supabase_tables_extra.sql
 
-create index if not exists idx_questions_quiz on public.questions(quiz_id);
-alter table public.questions enable row level security;
-
--- Public read questions for public quizzes
-create policy "Public read questions"
-on public.questions
-for select
-to anon, authenticated
-using ( true );
-
--- Answers (attempt log)
-create table if not exists public.answers (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  anon_id text,
-  quiz_id uuid not null references public.quizzes(id) on delete cascade,
-  question_id uuid not null references public.questions(id) on delete cascade,
-  answer_text text not null,
-  is_correct boolean not null default false,
-  created_at timestamptz not null default now(),
-  constraint answers_user_or_anon check (
-    (user_id is not null and anon_id is null) or
-    (user_id is null and anon_id is not null)
-  )
-);
-
-create index if not exists idx_answers_quiz on public.answers(quiz_id);
-create index if not exists idx_answers_question on public.answers(question_id);
-create index if not exists idx_answers_user on public.answers(user_id);
-create index if not exists idx_answers_anon on public.answers(anon_id);
-
-alter table public.answers enable row level security;
-
--- Policies:
--- Authenticated users manage their own answers
-create policy "answers read by user"
-on public.answers
-for select
-to authenticated
-using ( auth.uid() = user_id );
-
-create policy "answers insert by user"
-on public.answers
-for insert
-to authenticated
-with check ( auth.uid() = user_id );
-
--- Anonymous: allow insert/select when anon_id present (best-effort tracking)
-create policy "answers read by anon"
-on public.answers
-for select
-to anon
-using ( anon_id is not null );
-
-create policy "answers insert by anon"
-on public.answers
-for insert
-to anon
-with check ( anon_id is not null );
-```
+You can also print both via:
+- npm run setup:sql
 
 Notes:
 - Leaderboard reads from `public.scores`. Ensure `scores` policies from supabase.sql are applied.
