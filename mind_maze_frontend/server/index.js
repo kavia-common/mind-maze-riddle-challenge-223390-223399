@@ -237,25 +237,54 @@ app.post('/api/answers', async (req, res) => {
   /**
    * Record answer: { user_id?, anon_id?, quiz_id, question_id, answer_text, is_correct }
    * Either user_id or anon_id is required.
+   * Validation aligns with schema: answer_text must be non-empty, ids are sanitized.
    */
   if (!requireAdmin(res)) return;
+
+  // Basic UUID-ish check to avoid obvious bad payloads (not strict)
+  const isUuidish = (v) => typeof v === 'string' && v.length >= 16 && v.length <= 64;
+
+  const rawUserId = typeof req.body?.user_id === 'string' ? req.body.user_id : null;
+  const rawAnonId = rawUserId ? null : (typeof req.body?.anon_id === 'string' ? req.body.anon_id : null);
+
   const payload = {
-    user_id: req.body?.user_id ? sanitizeString(req.body.user_id, 64) : null,
-    anon_id: req.body?.user_id ? null : sanitizeString(req.body?.anon_id || '', 128),
+    user_id: rawUserId ? sanitizeString(rawUserId, 64) : null,
+    anon_id: rawUserId ? null : (rawAnonId ? sanitizeString(rawAnonId, 128) : null),
     quiz_id: sanitizeString(req.body?.quiz_id, 64),
     question_id: sanitizeString(req.body?.question_id, 64),
     answer_text: sanitizeString(req.body?.answer_text || '', 512),
     is_correct: Boolean(req.body?.is_correct),
   };
-  if (!payload.quiz_id) return res.status(400).json({ error: { message: 'quiz_id required' } });
-  if (!payload.question_id) return res.status(400).json({ error: { message: 'question_id required' } });
-  if (!payload.user_id && !payload.anon_id) return res.status(400).json({ error: { message: 'user_id or anon_id required' } });
+
+  // Input validation with helpful messages
+  if (!payload.quiz_id || !isUuidish(payload.quiz_id)) {
+    return res.status(400).json({ error: { message: 'quiz_id required (uuid)' } });
+  }
+  if (!payload.question_id || !isUuidish(payload.question_id)) {
+    return res.status(400).json({ error: { message: 'question_id required (uuid)' } });
+  }
+  if (!payload.user_id && !payload.anon_id) {
+    return res.status(400).json({ error: { message: 'user_id or anon_id required' } });
+  }
+  if (payload.anon_id !== null && payload.anon_id.trim().length === 0) {
+    return res.status(400).json({ error: { message: 'anon_id must be a non-empty string when provided' } });
+  }
+  if (!payload.answer_text || payload.answer_text.trim().length === 0) {
+    return res.status(400).json({ error: { message: 'answer_text required' } });
+  }
 
   try {
-    const { data, error } = await supabaseAdmin.from('answers').insert(payload).select('*').single();
-    if (error) return res.status(400).json({ error: { message: error.message } });
+    const { data, error } = await supabaseAdmin
+      .from('answers')
+      .insert(payload)
+      .select('*')
+      .single();
+    if (error) {
+      // Surface supabase constraint messages succinctly
+      return res.status(400).json({ error: { message: error.message } });
+    }
     return res.status(201).json({ data });
-  } catch {
+  } catch (e) {
     return res.status(500).json({ error: { message: 'Failed to record answer' } });
   }
 });
